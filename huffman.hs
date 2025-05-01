@@ -2,6 +2,7 @@ module Huffman where
 
 import Data.Map as DM
 import Data.Char as DC
+import Data.List as DL
 import Heap
 
 {-
@@ -26,12 +27,6 @@ weight :: HTree -> Int
 weight (Leaf _ w)   = w
 weight (Node _ _ w) = w
 
-instance Eq HTree where
-    t1 == t2 = (weight t1) == (weight t2)
-
-instance Ord HTree where
-    compare t1 t2 = compare (weight t1) (weight t2)
-
 -- Diccionarios de frecuencias y códigos
 
 type FreqMap = Map Char Int
@@ -40,24 +35,23 @@ type CodeMap = Map Char Code
 
 
 -- Ejercicio 1
+instance Eq HTree where
+    t1 == t2 = (weight t1) == (weight t2)
 
+instance Ord HTree where
+    compare t1 t2 = compare (weight t1) (weight t2)
 
 -- Ejercicio 2
-
 buildFreqMap :: String -> FreqMap
-buildFreqMap str = buildFreqMapInner str DM.empty where
-    buildFreqMapInner "" dict = dict
-    buildFreqMapInner (x:xs) dict = buildFreqMapInner xs (insertWith (+) x 1 dict)
+buildFreqMap str = DL.foldl' (\dict char -> (DM.insertWith (+) char 1 dict)) DM.empty str
 
 -- Ejercicio 3
-
 buildHTree :: FreqMap -> HTree
-buildHTree fm = buildCodingTree (initHtreeHeap (assocs fm) E)
+buildHTree fm = buildCodingTree (initHtreeHeap (assocs fm))
     where
         -- Given a list [(k, v)] insert into heap all single noded trees, with root (k, v)
-        initHtreeHeap :: [(Char, Int)] -> Heap HTree -> Heap HTree
-        initHtreeHeap [] heap = heap
-        initHtreeHeap ((char, num) : xs) heap = initHtreeHeap xs (Heap.insert (Leaf char num) heap)
+        initHtreeHeap :: [(Char, Int)] -> Heap HTree
+        initHtreeHeap = DL.foldl' (\tree (char, num) -> Heap.insert (Leaf char num) tree) Heap.empty
 
         -- Given an initialized heap, construct coding tree
         buildCodingTree :: Heap HTree -> HTree
@@ -75,39 +69,33 @@ buildHTree fm = buildCodingTree (initHtreeHeap (assocs fm) E)
                                             buildCodingTree (Heap.insert childsTree updatedHeapB)
 
 -- Ejercicio 4
-
 buildCodeMap :: HTree -> CodeMap
 buildCodeMap tree = (buildCodeMapInner tree DM.empty []) 
     where
         buildCodeMapInner :: HTree -> CodeMap -> Code -> CodeMap
         buildCodeMapInner (Leaf char _) dict path = (DM.insert char (reverse path) dict) -- ':' inserts at top of the list, but insertion must be made at the bottom
-        buildCodeMapInner (Node l r _) dict path = (buildCodeMapInner l (buildCodeMapInner r dict (One : path)) (Zero : path))
+        buildCodeMapInner (Node l r _) dict path = let dictR = buildCodeMapInner r dict (One : path) in
+            buildCodeMapInner l dictR (Zero : path)
 
 -- Ejercicio 5
-
 encode :: CodeMap -> String -> Code
-encode cm [] = []
-encode cm (x : xs) = case (DM.lookup x cm) of
-                        (Just code) -> code ++ (encode cm xs)
-                        Nothing -> error "Key error: character not found."
+encode cm str = concatMap getChar str where
+    getChar :: Char -> Code
+    getChar c = DM.findWithDefault (error $ "encode key error, no code for character: " ++ show c) c cm
 
 -- Ejercicio 6
-
 decode :: HTree -> Code -> String
-decode tree codedMsg = decodeInner tree tree codedMsg "" 
-    where
-        decodeInner :: HTree -> HTree -> Code -> String -> String
-        decodeInner _ (Leaf char _) [] decoded = [char]
-        decodeInner treeRef (Leaf char _) code decoded = char : (decodeInner treeRef treeRef code decoded) -- agregar caracter y volver a buscar
-        decodeInner treeRef (Node l r _) (x:xs) decoded = 
-            case x of
-                Zero -> decodeInner treeRef l xs decoded
-                One -> decodeInner treeRef r xs decoded
+decode tree codedMsg = decodeInner tree codedMsg where
+    decodeInner :: HTree -> Code -> String
+    decodeInner (Leaf c _) [] = [c]
+    decodeInner (Leaf c _) str = c : (decodeInner tree str) -- Reached a leaf, we restart from the top
+    decodeInner (Node l _ _) (Zero:str) = decodeInner l str
+    decodeInner (Node _ r _) (One:str) = decodeInner r str
+    decodeInner _ [] = []
 
 -- Ejercicio 7
-
 engFM :: FreqMap
-engFM = fromList [
+engFM = DM.fromList [
     ('a', 691),
     ('b', 126),
     ('c', 235),
