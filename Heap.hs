@@ -1,5 +1,5 @@
 module Heap (
-    Heap(..), --Only putting "Heap" exports the type but not the constructors, use (..) for that.
+    Heap,
     empty,
     isEmpty,
     insert,
@@ -9,7 +9,7 @@ module Heap (
 ) where
 
 type Rank = Int
-data Heap a = E | N Rank a (Heap a) (Heap a) deriving Show
+data Heap a = E | N Rank a (Heap a) (Heap a)
 
 merge :: Ord a => Heap a -> Heap a -> Heap a
 merge h1 E = h1

@@ -1,8 +1,7 @@
 module Huffman where
 
 import Data.Map as DM
-import Data.Char as DC
-import Data.List as DL
+import Data.Char as DC -- usada para testeo
 import Heap
 
 {-
@@ -33,7 +32,6 @@ type FreqMap = Map Char Int
 
 type CodeMap = Map Char Code
 
-
 -- Ejercicio 1
 instance Eq HTree where
     t1 == t2 = (weight t1) == (weight t2)
@@ -42,25 +40,32 @@ instance Ord HTree where
     compare t1 t2 = compare (weight t1) (weight t2)
 
 -- Ejercicio 2
+-- Usamos la funcion insertWith
+-- Si la key k no existia en el dict, se agrega (k, 1) al dict
+-- Si la key k ya existia, entonces se actualiza la entrada (k, v) por (k, v + 1) en dict
+-- Arrancamos de un dict vacio, y vamos aplicando de derecha a izquierda la funcion lambda que inserta el par key value o lo actualiza
 buildFreqMap :: String -> FreqMap
-buildFreqMap str = DL.foldl' (\dict char -> (DM.insertWith (+) char 1 dict)) DM.empty str
+buildFreqMap = Prelude.foldl (\dict -> \ch -> DM.insertWith (+) ch 1 dict) DM.empty
 
 -- Ejercicio 3
+-- Usamos assocs, para convertir el diccionario en una lista que podamos recorrer.
+
 buildHTree :: FreqMap -> HTree
 buildHTree fm = buildCodingTree (initHtreeHeap (assocs fm))
     where
-        -- Given a list [(k, v)] insert into heap all single noded trees, with root (k, v)
+        -- Dada una lista [(k, v)], insertar en el heap arboles de un unico elemento, de raiz (k, v)
+        -- La funcion queda parcialmente instanciada, esperando la lista [(k,v)]
         initHtreeHeap :: [(Char, Int)] -> Heap HTree
-        initHtreeHeap = DL.foldl' (\tree (char, num) -> Heap.insert (Leaf char num) tree) Heap.empty
+        initHtreeHeap = Prelude.foldl (\h -> \(char, num) -> Heap.insert (Leaf char num) h) Heap.empty
 
-        -- Given an initialized heap, construct coding tree
+        -- Dado un heap inicializado, construir el arbol de codificacion
         buildCodingTree :: Heap HTree -> HTree
         buildCodingTree heap =  let 
                                     findMinAndDel heap = (Heap.findMin heap, Heap.deleteMin heap)
                                     (minTreeA, updatedHeapA) = (findMinAndDel heap) 
                                 in
                                     if (Heap.isEmpty updatedHeapA) then
-                                        minTreeA -- when a single tree is left in heap => coding tree is done
+                                        minTreeA -- queda un unico arbol en el heap => el arbol de codificacion esta listo
                                     else
                                         let 
                                             (minTreeB, updatedHeapB) = (findMinAndDel updatedHeapA)
@@ -69,29 +74,43 @@ buildHTree fm = buildCodingTree (initHtreeHeap (assocs fm))
                                             buildCodingTree (Heap.insert childsTree updatedHeapB)
 
 -- Ejercicio 4
+-- Vamos llevando la traza actual en la funcion buildCodeMapInner
+-- Cuando buscamos por la izquierda -> añadimos un 0, cuando buscamos por derecha -> añadimos un 1
+-- Cuando llegamos a una hoja, asociamos el valor del caracter en la hoja a la traza actual
+-- Si usamos (:) los elementos son añadidos al principio de la lista, pero realmente la traza la queremos construir insertando por atras
+-- Optamos por revertir el path al llegar a una hoja, en lugar de usar (++) cada vez que añadimos un elemento a la traza
 buildCodeMap :: HTree -> CodeMap
 buildCodeMap tree = (buildCodeMapInner tree DM.empty []) 
     where
         buildCodeMapInner :: HTree -> CodeMap -> Code -> CodeMap
-        buildCodeMapInner (Leaf char _) dict path = (DM.insert char (reverse path) dict) -- ':' inserts at top of the list, but insertion must be made at the bottom
-        buildCodeMapInner (Node l r _) dict path = let dictR = buildCodeMapInner r dict (One : path) in
-            buildCodeMapInner l dictR (Zero : path)
+        buildCodeMapInner (Leaf char _) dict path = (DM.insert char (reverse path) dict)
+        buildCodeMapInner (Node l r _) dict path =  let 
+                                                        dictR = buildCodeMapInner r dict (One : path) 
+                                                    in
+                                                        buildCodeMapInner l dictR (Zero : path)
 
 -- Ejercicio 5
 encode :: CodeMap -> String -> Code
-encode cm str = concatMap getChar str where
-    getChar :: Char -> Code
-    getChar c = DM.findWithDefault (error $ "encode key error, no code for character: " ++ show c) c cm
+encode cm str = concat (Prelude.map getChar str)
+    where
+        getChar :: Char -> Code
+        getChar c = case (DM.lookup c cm) of
+                        (Just charcode) -> charcode
+                        Nothing -> error "Key error: character not found."
 
 -- Ejercicio 6
+-- Recorremos el arbol siguiendo la traza hasta que nos encontremos con una hoja.
+-- Al encontrarnos una hoja, añadimos el caracter de ella a la solucion y reseteamos el arbol (arrancamos de nuevo 
+-- desde la raiz) para seguir procesando la traza.
 decode :: HTree -> Code -> String
-decode tree codedMsg = decodeInner tree codedMsg where
-    decodeInner :: HTree -> Code -> String
-    decodeInner (Leaf c _) [] = [c]
-    decodeInner (Leaf c _) str = c : (decodeInner tree str) -- Reached a leaf, we restart from the top
-    decodeInner (Node l _ _) (Zero:str) = decodeInner l str
-    decodeInner (Node _ r _) (One:str) = decodeInner r str
-    decodeInner _ [] = []
+decode tree codedMsg = decodeInner tree codedMsg 
+    where
+        decodeInner :: HTree -> Code -> String
+        decodeInner (Leaf c _) [] = [c]
+        decodeInner (Leaf c _) str = c : (decodeInner tree str)
+        decodeInner (Node l _ _) (Zero:str) = decodeInner l str
+        decodeInner (Node _ r _) (One:str) = decodeInner r str
+        decodeInner _ [] = []
 
 -- Ejercicio 7
 engFM :: FreqMap
@@ -131,8 +150,13 @@ engFM = DM.fromList [
 engTree :: HTree
 engTree = buildHTree engFM
 
+-- Funcion auxiliar para pasar las letras a minuscula y quitar caracteres indeseados de los strings usados para testear
 cleanString :: String -> String
-cleanString str = let lowercaseStr = Prelude.map toLower str in Prelude.filter (\x -> notElem x [';', '-', '?', ':', '/', '(', ')']) lowercaseStr
+cleanString str =   let 
+                        lowercaseStr = Prelude.map toLower str
+                        list = [';', '-', '?', ':', '/', '(', ')']
+                    in 
+                        Prelude.filter (\x -> not (elem x list)) lowercaseStr
 
 testStrings :: [String]
 testStrings = [
@@ -161,15 +185,20 @@ testStrings = [
 
 cleanStrings :: [String]
 cleanStrings = Prelude.map cleanString testStrings
+
 codedStrings :: [Code]
 codedStrings = Prelude.map (encode (buildCodeMap engTree)) cleanStrings
+
 codedStringLength :: [Int]
 codedStringLength = Prelude.map length codedStrings
+
 notCodedStringLength :: [Int]
-notCodedStringLength = Prelude.map (\x -> (length x) * 5) cleanStrings
+notCodedStringLength = Prelude.map (\testStr -> (length testStr) * 5) cleanStrings
 
 {-
-Si bien el usar la codificación de Huffman ahorra espacio en la mayoría de los casos cuantos más caracteres distintos tiene la string a
-Codificar menos espacio se ahorra; En el peor de los casos(Están todos los caracteres en la string) la versión codificada ocupa más espacio.
+Si bien el usar la codificación de Huffman ahorra espacio en la mayoría de los casos, cuantos más caracteres distintos tiene la string a
+codificar menos espacio se ahorra; En el peor de los casos (Están todos los caracteres del alfabeto en la string) la versión codificada ocupa
+más espacio. Esto ocurre porque en Huffman al ser los códigos de longitud variable, el árbol de codificacion resultante puede no estar perfectamente
+balanceado, llevando a que algunos caracteres posean un codigo de longitud mayor a 5 bits.
 Esto hace que el algoritmo no sea ideal para codificar textos largos o con mucha varianza.
 -}
